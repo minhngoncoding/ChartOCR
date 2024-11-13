@@ -68,6 +68,7 @@ class COCOeval:
             print('iouType not specified. use default iouType segm')
         self.cocoGt   = cocoGt              # ground truth COCO API
         self.cocoDt   = cocoDt              # detections COCO API
+        self.params   = {}                  # evaluation parameters
         self.evalImgs = defaultdict(list)   # per-image per-category evaluation results [KxAxI] elements
         self.eval     = {}                  # accumulated evaluation results
         self._gts = defaultdict(list)       # gt for evaluation
@@ -202,7 +203,7 @@ class COCOeval:
         if len(gts) == 0 or len(dts) == 0:
             return []
         ious = np.zeros((len(dts), len(gts)))
-        sigmas = p.kpt_oks_sigmas
+        sigmas = np.array([.26, .25, .25, .35, .35, .79, .79, .72, .72, .62,.62, 1.07, 1.07, .87, .87, .89, .89])/10.0
         vars = (sigmas * 2)**2
         k = len(sigmas)
         # compute oks between each detection and ground truth object
@@ -333,7 +334,6 @@ class COCOeval:
         M           = len(p.maxDets)
         precision   = -np.ones((T,R,K,A,M)) # -1 for the precision of absent categories
         recall      = -np.ones((T,K,A,M))
-        scores      = -np.ones((T,R,K,A,M))
 
         # create dictionary for future indexing
         _pe = self._paramsEval
@@ -364,7 +364,6 @@ class COCOeval:
                     # different sorting method generates slightly different results.
                     # mergesort is used to be consistent as Matlab implementation.
                     inds = np.argsort(-dtScores, kind='mergesort')
-                    dtScoresSorted = dtScores[inds]
 
                     dtm  = np.concatenate([e['dtMatches'][:,0:maxDet] for e in E], axis=1)[:,inds]
                     dtIg = np.concatenate([e['dtIgnore'][:,0:maxDet]  for e in E], axis=1)[:,inds]
@@ -384,7 +383,6 @@ class COCOeval:
                         rc = tp / npig
                         pr = tp / (fp+tp+np.spacing(1))
                         q  = np.zeros((R,))
-                        ss = np.zeros((R,))
 
                         if nd:
                             recall[t,k,a,m] = rc[-1]
@@ -403,18 +401,15 @@ class COCOeval:
                         try:
                             for ri, pi in enumerate(inds):
                                 q[ri] = pr[pi]
-                                ss[ri] = dtScoresSorted[pi]
                         except:
                             pass
                         precision[t,:,k,a,m] = np.array(q)
-                        scores[t,:,k,a,m] = np.array(ss)
         self.eval = {
             'params': p,
             'counts': [T, R, K, A, M],
             'date': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             'precision': precision,
             'recall':   recall,
-            'scores': scores,
         }
         toc = time.time()
         print('DONE (t={:0.2f}s).'.format( toc-tic))
@@ -456,19 +451,23 @@ class COCOeval:
             print(iStr.format(titleStr, typeStr, iouStr, areaRng, maxDets, mean_s))
             return mean_s
         def _summarizeDets():
-            stats = np.zeros((12,))
+            stats = np.zeros((16,))
             stats[0] = _summarize(1)
             stats[1] = _summarize(1, iouThr=.5, maxDets=self.params.maxDets[2])
             stats[2] = _summarize(1, iouThr=.75, maxDets=self.params.maxDets[2])
-            stats[3] = _summarize(1, areaRng='small', maxDets=self.params.maxDets[2])
-            stats[4] = _summarize(1, areaRng='medium', maxDets=self.params.maxDets[2])
-            stats[5] = _summarize(1, areaRng='large', maxDets=self.params.maxDets[2])
-            stats[6] = _summarize(0, maxDets=self.params.maxDets[0])
-            stats[7] = _summarize(0, maxDets=self.params.maxDets[1])
-            stats[8] = _summarize(0, maxDets=self.params.maxDets[2])
-            stats[9] = _summarize(0, areaRng='small', maxDets=self.params.maxDets[2])
-            stats[10] = _summarize(0, areaRng='medium', maxDets=self.params.maxDets[2])
-            stats[11] = _summarize(0, areaRng='large', maxDets=self.params.maxDets[2])
+            stats[3] = _summarize(1, iouThr=.8, maxDets=self.params.maxDets[2])
+            stats[4] = _summarize(1, iouThr=.85, maxDets=self.params.maxDets[2])
+            stats[5] = _summarize(1, iouThr=0.8999999999999999, maxDets=self.params.maxDets[2])
+            stats[6] = _summarize(1, iouThr=.95, maxDets=self.params.maxDets[2])
+            stats[7] = _summarize(1, areaRng='small', maxDets=self.params.maxDets[2])
+            stats[8] = _summarize(1, areaRng='medium', maxDets=self.params.maxDets[2])
+            stats[9] = _summarize(1, areaRng='large', maxDets=self.params.maxDets[2])
+            stats[10] = _summarize(0, maxDets=self.params.maxDets[0])
+            stats[11] = _summarize(0, maxDets=self.params.maxDets[1])
+            stats[12] = _summarize(0, maxDets=self.params.maxDets[2])
+            stats[13] = _summarize(0, areaRng='small', maxDets=self.params.maxDets[2])
+            stats[14] = _summarize(0, areaRng='medium', maxDets=self.params.maxDets[2])
+            stats[15] = _summarize(0, areaRng='large', maxDets=self.params.maxDets[2])
             return stats
         def _summarizeKps():
             stats = np.zeros((10,))
@@ -503,8 +502,8 @@ class Params:
         self.imgIds = []
         self.catIds = []
         # np.arange causes trouble.  the data point on arange is slightly larger than the true value
-        self.iouThrs = np.linspace(.5, 0.95, int(np.round((0.95 - .5) / .05)) + 1, endpoint=True)
-        self.recThrs = np.linspace(.0, 1.00, int(np.round((1.00 - .0) / .01)) + 1, endpoint=True)
+        self.iouThrs = np.linspace(.5, 0.95, np.round((0.95 - .5) / .05) + 1, endpoint=True)
+        self.recThrs = np.linspace(.0, 1.00, np.round((1.00 - .0) / .01) + 1, endpoint=True)
         self.maxDets = [1, 10, 100]
         self.areaRng = [[0 ** 2, 1e5 ** 2], [0 ** 2, 32 ** 2], [32 ** 2, 96 ** 2], [96 ** 2, 1e5 ** 2]]
         self.areaRngLbl = ['all', 'small', 'medium', 'large']
@@ -514,13 +513,12 @@ class Params:
         self.imgIds = []
         self.catIds = []
         # np.arange causes trouble.  the data point on arange is slightly larger than the true value
-        self.iouThrs = np.linspace(.5, 0.95, int(np.round((0.95 - .5) / .05)) + 1, endpoint=True)
-        self.recThrs = np.linspace(.0, 1.00, int(np.round((1.00 - .0) / .01)) + 1, endpoint=True)
+        self.iouThrs = np.linspace(.5, 0.95, np.round((0.95 - .5) / .05) + 1, endpoint=True)
+        self.recThrs = np.linspace(.0, 1.00, np.round((1.00 - .0) / .01) + 1, endpoint=True)
         self.maxDets = [20]
         self.areaRng = [[0 ** 2, 1e5 ** 2], [32 ** 2, 96 ** 2], [96 ** 2, 1e5 ** 2]]
         self.areaRngLbl = ['all', 'medium', 'large']
         self.useCats = 1
-        self.kpt_oks_sigmas = np.array([.26, .25, .25, .35, .35, .79, .79, .72, .72, .62,.62, 1.07, 1.07, .87, .87, .89, .89])/10.0
 
     def __init__(self, iouType='segm'):
         if iouType == 'segm' or iouType == 'bbox':

@@ -589,7 +589,8 @@ def _ae_line_loss(tag_full, mask_full):
     pull = 0
     push = 0
     tag_full = torch.squeeze(tag_full)
-    tag_full[1-mask_full] = 0
+    mask_full = mask_full.to(torch.bool)
+    tag_full[~mask_full] = 0
     num = mask_full.sum(dim=2, keepdim=True).float()
     tag_avg = tag_full.sum(dim=2, keepdim=True) / num
     pull = torch.pow(tag_full - tag_avg, 2) / (num + 1e-4)

@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 import os
-
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 import json
 import torch
 import numpy as np
@@ -32,8 +32,8 @@ def parse_args():
     parser.add_argument("--cfg_file", dest="cfg_file", help="config file", default="CornerNet", type=str)
     parser.add_argument("--iter", dest="start_iter", help="train at iteration i", default=0, type=int)
     parser.add_argument("--threads", dest="threads", default=1, type=int)
-    parser.add_argument('--cache_path', dest="cache_path", type=str)
     parser.add_argument("--data_dir", dest="data_dir", default="./data", type=str)
+    parser.add_argument('--cache_path', dest="cache_path", default="", type=str)
     args = parser.parse_args()
     return args
 
@@ -84,6 +84,9 @@ def train(training_dbs, validation_db, start_iter=0):
     stepsize         = system_configs.stepsize
     val_ind = 0
     print("building model...")
+
+
+
     nnet = NetworkFactory(training_dbs[0])
     # getting the size of each database
     training_size   = len(training_dbs[0].db_inds)
@@ -185,15 +188,15 @@ def train(training_dbs, validation_db, start_iter=0):
         training_task.terminate()
 
 if __name__ == "__main__":
-
     args = parse_args()
     cfg_file = os.path.join(system_configs.config_dir, args.cfg_file + ".json")
     with open(cfg_file, "r") as f:
         configs = json.load(f)
     configs["system"]["data_dir"] = args.data_dir
-    configs["system"]["cache_dir"] = args.cache_path
+    configs["system"]["cache_dir"] = args.data_dir + "/cache"
+
+
     file_list_data = os.listdir(args.data_dir)
-    print(file_list_data)
     configs["system"]["snapshot_name"] = args.cfg_file
     system_configs.update_config(configs["system"])
 
@@ -202,8 +205,8 @@ if __name__ == "__main__":
 
     print("loading all datasets...")
     dataset = system_configs.dataset
-    # threads = max(torch.cuda.device_count() * 2, 4)
     threads = args.threads
+    threads = max(torch.cuda.device_count() * 2, 4)
     print("using {} threads".format(threads))
     training_dbs  = [datasets[dataset](configs["db"], train_split) for _ in range(threads)]
     validation_db = datasets[dataset](configs["db"], val_split)
